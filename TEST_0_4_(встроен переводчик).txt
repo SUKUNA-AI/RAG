@@ -1,0 +1,122 @@
+### Установка фреймворков
+!pip install -U langchain # общий фреймворк
+!pip install langchain_community # для работы с загрузчиком документов
+!pip install -U sentence-transformers # для
+!pip install -U langchain-chroma # для создание БД
+!pip install -U deep-translator # переводчик (здесь используем Google Translator)
+
+
+
+"""Переводчик вопроса (запроса)"""
+from deep_translator import GoogleTranslator
+
+def query_translation(query) -> str:
+
+  translated_query = GoogleTranslator(source='ru', target='en').translate(query)
+
+  return translated_query
+
+
+"""Переводчик ответа от LLM (генератора)"""
+def response_translation(response) -> str:
+
+  translated_response = GoogleTranslator(source='en', target='ru').translate(response)
+
+  return translated_response
+
+
+"""Переводчик файлов для Базы знаний"""
+# (используется разово для импорта новых файлов в Базу знаний)
+def text_translation(path_new_knowledge_file) -> str:
+
+  translated_file = GoogleTranslator(source='ru', target='en').translate_file(path_new_knowledge_file)
+
+  return translated_file # Вместо translated_file сделать импорт переведенных файлов в Базу Знаний
+
+
+"""Тест работоспособности переводчика"""
+# Пример запроса на русском языке
+query = "Как работает система RAG?"
+
+# Обработка запроса с переводом
+response = query_translation(query)
+
+# Вывод результата
+print(response)
+
+
+
+# Загрузчик документов
+from langchain.document_loaders import DirectoryLoader, TextLoader
+
+# в loader указываем путь в папку с базой знаний
+# path - укажите путь к ПАПКЕ с файлами для Базы знаний ()
+# glob - файлы какого формата будут учитываться, тут ".txt" формат
+# с другими форматами не тестил
+
+loader = DirectoryLoader(path='/content', glob = './*.txt', loader_cls= TextLoader)
+documents = loader.load()
+
+
+#  Ссылка на сайт для подробного понимания DirectoryLoader (зажми 'Ctrl' и нажми на ссылку)
+#  https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.directory.DirectoryLoader.html
+
+
+# Разбинеие на чанки
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# chunk_size - регулирует размер чанков
+text_splitter = RecursiveCharacterTextSplitter(chunk_size = 200)
+documents = text_splitter.split_documents(documents)
+
+
+# Эмбеддинг
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+
+# Берём модель для эмбединга с Hugging Face
+model_name = 'BAAI/bge-small-en-v1.5'
+encode_kwargs = {'normalize_embeddings': True}
+bge_embeddings = HuggingFaceBgeEmbeddings(
+    model_name=model_name,
+    model_kwargs={'device': 'cpu'},
+    # вместо 'cpu' можно указать 'cuda' для более быстрой работы
+    encode_kwargs=encode_kwargs
+)
+
+
+# Создание Базы знаний через Chroma (без сохранения Базы знаний)
+from langchain.vectorstores import Chroma
+vectordb = Chroma.from_documents(documents, bge_embeddings)
+
+
+"""
+Добавить загрузку документов формата .txt
+и парсинг информативных сайтов для обновления Базы Знаний(обновление скорее всего будет в настоящем времени)
+Под обновлением подразумевается доступ к сайтам по URL ссылки
+"""
+
+#  Ретривер
+# as_retriever извлекает из векторной БД чанки
+retriever = vectordb.as_retriever()
+
+# response имеет вид списка, у него буквально тип данных 'list'
+
+query = query_translation('Где человек') # Перевод вопроса с русского на англ
+
+response_not_translated = retriever.invoke(query) # Запрос найденных чанков из БД
+
+
+# используем response[0], потому что response - список,
+#  а к списку не может быть применён метод page_content
+# метод page_content выводит ответ в человечном виде
+# о да, обязательно попробуй запустить без page_content)
+
+response = response_translation(response_not_translated[0].page_content) # Перевод ответа модели
+
+print(response)
+
+
+# И да доп. инфу и подробности можно искать через документацию langchain
+# мужики, там есть поиск в правой верхнем углу (на сайте langchain)
+# Вот ссылка (зажми 'Ctrl' и нажми на ссылку)
+# https://python.langchain.com/docs/introduction/
